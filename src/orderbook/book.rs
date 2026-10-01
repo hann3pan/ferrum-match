@@ -104,8 +104,6 @@ impl OrderBook {
         let id = self.next_order_id();
         tracing::Span::current().record("order_id", id.0);
 
-        self.order_index.insert(id, (side, price));
-
         let order = Order {
             id,
             price,
@@ -139,8 +137,12 @@ impl OrderBook {
         level.remove(pos)
     }
 
+    /// The single place an order starts resting: pushes it onto the book
+    /// *and* records it in `order_index` in the same step, so the index can
+    /// never drift from "the set of orders currently resting on a level".
     fn add_order_internal(&mut self, order: Order, side: Side) {
         trace!(id = %order.id.0, side = ?side, "Inserting order into book");
+        self.order_index.insert(order.id, (side, order.price));
         self.side_map_mut(side)
             .entry(order.price)
             .or_default()
@@ -255,9 +257,11 @@ impl OrderBook {
             }
         }
 
-        if incoming.quantity == 0 {
-            self.order_index.remove(&incoming.id);
-        } else {
+        // A fully filled taker never rested, so it was never added to
+        // `order_index` in the first place (see `add_order_internal`) —
+        // nothing to remove here. Only a remainder that starts resting needs
+        // to enter the index, which `add_order_internal` does on its own.
+        if incoming.quantity > 0 {
             debug!(remaining_qty = %incoming.quantity, "Order not fully filled, adding remainder to book");
             self.add_order_internal(incoming, side);
         }
