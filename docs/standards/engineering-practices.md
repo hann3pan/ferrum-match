@@ -1,7 +1,11 @@
 # Engineering practices
 
-Full rationale behind the "Implementation standards" bullets in `CLAUDE.md`. Read that file
-first — this doc exists so the *why* doesn't have to be re-argued in every PR.
+Full rationale behind the "Implementation standards" bullets in `CLAUDE.md`, plus the "why" behind
+a few of its "Current rules" and "Target architecture rules". Read that file first — this doc
+exists so the *why* doesn't have to be re-argued in every PR. Where a section below talks about
+something CLAUDE.md lists under "Target architecture rules" (the event log, replay), it's
+explaining the reasoning for a direction the project is heading, not describing code that exists
+today — see README's "Current status" for what's actually implemented.
 
 ## Write the test first
 
@@ -86,10 +90,10 @@ take the whole book down, which is a much larger blast radius than a returned `E
 A function that returns a value shouldn't also mutate the book, and a function that mutates the
 book shouldn't also decide and return whether it was valid to do so. Split "check and mutate"
 into a query (`fn best_bid(&self) -> Option<Price>`) and a command (`fn apply_match(&mut self,
-..)`). This matters in a matching engine because it makes the event-sourcing discipline in
-`CLAUDE.md` enforceable: if mutation is isolated to a small set of command functions, you can
-guarantee every one of them produces an event, instead of auditing every function that happens
-to also have a side effect.
+..)`). This matters in a matching engine because it will make the event-sourcing discipline under
+CLAUDE.md's "Target architecture rules" easier to retrofit later: if mutation is already isolated
+to a small set of command functions, wiring each one to emit an event is a local change, instead
+of auditing every function that happens to also have a side effect.
 
 ## One concept per function/module
 
@@ -129,17 +133,20 @@ instead of true-to-within-epsilon.
 Given the same sequence of inputs (orders, cancels), the matching engine must always produce the
 same sequence of outputs (trades, book state) — no reliance on wall-clock time, thread scheduling
 order, hash-map iteration order, or any other source of nondeterminism inside the matching path
-itself. Three things depend on this:
+itself. This is already a "Current rule" in CLAUDE.md, not just a future concern — one thing
+depends on it today, and two more will once the event log exists:
 
-- **Crash recovery.** The "Always" rule that book state must be reconstructable by replaying the
-  event log from zero only works if replaying the same events twice produces the same book both
-  times. A nondeterministic matching step makes the replayed state diverge from what was actually
-  committed, which defeats the entire point of the event log.
-- **Audit.** When a trade is disputed, the only way to prove the engine did the right thing is to
-  replay the exact input sequence and get the exact same trade. Nondeterminism turns every audit
-  into "it probably did the right thing."
-- **Reproducible bugs.** A matching bug that only reproduces 1 time in 20 because of iteration
-  order or timing is far more expensive to find and fix than one that reproduces every time given
-  the same input — which is also why the property-based tests in `tests/orderbook.rs` are run
-  with many generated cases: they're only trustworthy as regression tests if a failing case is
-  deterministically reproducible from its seed.
+- **Reproducible bugs (today).** A matching bug that only reproduces 1 time in 20 because of
+  iteration order or timing is far more expensive to find and fix than one that reproduces every
+  time given the same input — which is also why the property-based tests in `tests/orderbook.rs`
+  and `tests/invariants.rs` are run with many generated cases: they're only trustworthy as
+  regression tests if a failing case is deterministically reproducible from its seed.
+- **Crash recovery (target).** CLAUDE.md's target rule that book state must be reconstructable by
+  replaying the event log from zero will only work if replaying the same events twice produces the
+  same book both times. A nondeterministic matching step would make the replayed state diverge
+  from what was actually committed, defeating the entire point of the event log. There is no event
+  log yet (see README), so this doesn't apply today — but determinism has to be in place before
+  one is added, not retrofitted after.
+- **Audit (target).** Once replay exists, the only way to prove the engine did the right thing for
+  a disputed trade is to replay the exact input sequence and get the exact same trade.
+  Nondeterminism would turn every audit into "it probably did the right thing."
