@@ -1,5 +1,7 @@
 mod modes;
 
+use std::process::ExitCode;
+
 use clap::{Parser, Subcommand};
 
 use crate::modes::interactive::interactive_mode_loop;
@@ -27,20 +29,24 @@ enum CommandModeCommands {
     },
 }
 
-fn main() -> rustyline::Result<()> {
+fn main() -> ExitCode {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(CommandModeCommands::Interactive) => {
-            interactive_mode_loop()?;
-        }
+        Some(CommandModeCommands::Interactive) => match interactive_mode_loop() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("ferrum interactive: {err}");
+                ExitCode::FAILURE
+            }
+        },
         Some(CommandModeCommands::Run { port }) => {
             eprintln!("ferrum run: headless mode on port {port} is not implemented yet");
-            std::process::exit(1);
+            ExitCode::FAILURE
         }
         None => {
             println!("No command given. Run `ferrum --help` for usage.");
+            ExitCode::SUCCESS
         }
     }
-    Ok(())
 }

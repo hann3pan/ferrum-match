@@ -1,4 +1,4 @@
-use ferrum_match::orderbook::types::{OrderBook, OrderError, OrderId, Side};
+use ferrum_match::orderbook::types::{OrderBook, OrderError, OrderId, Price, Side};
 use proptest::prelude::*;
 
 fn empty_book() -> OrderBook {
@@ -483,6 +483,51 @@ mod orderbook {
             .expect("partially filled order should still be resting");
         assert_eq!(remaining.quantity, 6);
         assert!(book.orders_at(Side::Ask, 100).is_none());
+    }
+
+    #[test]
+    fn levels_orders_bids_descending_and_asks_ascending() {
+        let mut book = empty_book();
+        rest(&mut book, 100, 1, Side::Bid);
+        rest(&mut book, 102, 1, Side::Bid);
+        rest(&mut book, 101, 1, Side::Bid);
+
+        let bid_prices: Vec<Price> = book.levels(Side::Bid).map(|(price, _)| price).collect();
+        assert_eq!(
+            bid_prices,
+            vec![102, 101, 100],
+            "bids must be best-first (descending)"
+        );
+
+        // Asks priced well above the resting bids so `rest` (which submits
+        // through the matching path) doesn't cross them.
+        rest(&mut book, 252, 1, Side::Ask);
+        rest(&mut book, 250, 1, Side::Ask);
+        rest(&mut book, 251, 1, Side::Ask);
+
+        let ask_prices: Vec<Price> = book.levels(Side::Ask).map(|(price, _)| price).collect();
+        assert_eq!(
+            ask_prices,
+            vec![250, 251, 252],
+            "asks must be best-first (ascending)"
+        );
+    }
+
+    #[test]
+    fn levels_exposes_fifo_orders_within_a_price_level() {
+        let mut book = empty_book();
+        rest(&mut book, 100, 3, Side::Bid);
+        rest(&mut book, 100, 7, Side::Bid);
+
+        let mut levels = book.levels(Side::Bid);
+        let (price, orders) = levels.next().expect("one bid level");
+        assert_eq!(price, 100);
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0].id, OrderId(1));
+        assert_eq!(orders[0].quantity, 3);
+        assert_eq!(orders[1].id, OrderId(2));
+        assert_eq!(orders[1].quantity, 7);
+        assert!(levels.next().is_none());
     }
 
     #[test]

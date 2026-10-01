@@ -37,6 +37,25 @@ impl OrderBook {
         self.side_map(side).get(&price)
     }
 
+    /// Resting price levels on `side`, best price first: bids descending
+    /// from the highest price, asks ascending from the lowest. Each level
+    /// is `(price, orders)` with `orders` in FIFO arrival order, exactly as
+    /// stored — the returned iterator borrows from `self` and cannot outlive
+    /// it.
+    pub fn levels(&self, side: Side) -> impl Iterator<Item = (Price, &VecDeque<Order>)> {
+        let ascending = self
+            .side_map(side)
+            .iter()
+            .map(|(&price, orders)| (price, orders));
+
+        match side {
+            Side::Bid => {
+                Box::new(ascending.rev()) as Box<dyn Iterator<Item = (Price, &VecDeque<Order>)>>
+            }
+            Side::Ask => Box::new(ascending),
+        }
+    }
+
     /// Number of distinct price levels currently resting on `side`.
     pub fn price_level_count(&self, side: Side) -> usize {
         self.side_map(side).len()
@@ -49,7 +68,9 @@ impl OrderBook {
 
     /// Ids the index currently tracks as resting. Lets tests cross-check the
     /// index against the book's actual contents (bids/asks are private);
-    /// production code has no use for the raw id set.
+    /// production code has no use for the raw id set, so this only exists
+    /// under the `test-utils` feature.
+    #[cfg(feature = "test-utils")]
     pub fn indexed_order_ids(&self) -> std::collections::HashSet<OrderId> {
         self.order_index.keys().copied().collect()
     }
@@ -104,8 +125,6 @@ impl OrderBook {
         let id = self.next_order_id();
         tracing::Span::current().record("order_id", id.0);
 
-        self.order_index.insert(id, (side, price));
-
         let order = Order {
             id,
             price,
@@ -139,8 +158,12 @@ impl OrderBook {
         level.remove(pos)
     }
 
+    /// The single place an order starts resting: pushes it onto the book
+    /// *and* records it in `order_index` in the same step, so the index can
+    /// never drift from "the set of orders currently resting on a level".
     fn add_order_internal(&mut self, order: Order, side: Side) {
         trace!(id = %order.id.0, side = ?side, "Inserting order into book");
+        self.order_index.insert(order.id, (side, order.price));
         self.side_map_mut(side)
             .entry(order.price)
             .or_default()
@@ -255,9 +278,11 @@ impl OrderBook {
             }
         }
 
-        if incoming.quantity == 0 {
-            self.order_index.remove(&incoming.id);
-        } else {
+        // A fully filled taker never rested, so it was never added to
+        // `order_index` in the first place (see `add_order_internal`) —
+        // nothing to remove here. Only a remainder that starts resting needs
+        // to enter the index, which `add_order_internal` does on its own.
+        if incoming.quantity > 0 {
             debug!(remaining_qty = %incoming.quantity, "Order not fully filled, adding remainder to book");
             self.add_order_internal(incoming, side);
         }

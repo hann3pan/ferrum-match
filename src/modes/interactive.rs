@@ -8,8 +8,7 @@ use ferrum_match::orderbook::types::{OrderBook, OrderError, OrderId, Side};
 
 #[derive(Debug, PartialEq)]
 enum Command {
-    Buy { price: u64, qty: u64 },
-    Sell { price: u64, qty: u64 },
+    Submit { side: Side, price: u64, qty: u64 },
     Cancel { id: u64 },
     Print,
     Exit,
@@ -55,11 +54,13 @@ fn parse_command_or_error(input: &str) -> Result<Command, String> {
 }
 
 fn parse_side(side: &str, p: u64, q: u64) -> Result<Command, String> {
-    match SideArg::from_str(side, true) {
-        Ok(SideArg::Buy) => Ok(Command::Buy { price: p, qty: q }),
-        Ok(SideArg::Sell) => Ok(Command::Sell { price: p, qty: q }),
-        Err(_) => Err("Invalid side: use BUY or SELL".to_string()),
-    }
+    let side_arg =
+        SideArg::from_str(side, true).map_err(|_| "Invalid side: use BUY or SELL".to_string())?;
+    Ok(Command::Submit {
+        side: side_arg.into(),
+        price: p,
+        qty: q,
+    })
 }
 
 pub fn parse_quantity(qty: &str) -> Result<u64, String> {
@@ -86,27 +87,38 @@ fn describe_order_error(err: OrderError) -> &'static str {
     }
 }
 
+/// Renders the full book (asks, then bids) via `OrderBook::levels`, best
+/// price first on each side. Formatting lives here rather than in
+/// `src/orderbook` so the domain crate stays free of presentation concerns.
+fn format_book(orderbook: &OrderBook) -> String {
+    let mut output = String::new();
+    format_side(&mut output, "Asks", orderbook, Side::Ask);
+    format_side(&mut output, "Bids", orderbook, Side::Bid);
+    output
+}
+
+fn format_side(output: &mut String, label: &str, orderbook: &OrderBook, side: Side) {
+    output.push_str(label);
+    output.push('\n');
+    for (price, orders) in orderbook.levels(side) {
+        output.push_str(&format!("  {price}\n"));
+        for order in orders {
+            output.push_str(&format!(
+                "    id={} qty={} arrival_seq={}\n",
+                order.id.0, order.quantity, order.arrival_seq
+            ));
+        }
+    }
+}
+
 pub fn interactive_mode(orderbook: &mut OrderBook, line: &str) -> ControlFlow<()> {
     match parse_command_or_error(&line.to_lowercase()) {
         Ok(cmd) => match cmd {
             Command::Print => {
-                println!("best bid: {:?}", orderbook.best_bid());
-                println!("best ask: {:?}", orderbook.best_ask());
+                print!("{}", format_book(orderbook));
             }
-            Command::Buy { price, qty } => {
-                match orderbook.matching_order(OrderBook::make_order_request(price, qty, Side::Bid))
-                {
-                    Ok(trades) => println!(
-                        "Successfully made {} trades, trade information:\n{:?}",
-                        trades.len(),
-                        trades
-                    ),
-                    Err(e) => println!("{}", describe_order_error(e)),
-                }
-            }
-            Command::Sell { price, qty } => {
-                match orderbook.matching_order(OrderBook::make_order_request(price, qty, Side::Ask))
-                {
+            Command::Submit { side, price, qty } => {
+                match orderbook.matching_order(OrderBook::make_order_request(price, qty, side)) {
                     Ok(trades) => println!(
                         "Successfully made {} trades, trade information:\n{:?}",
                         trades.len(),
@@ -156,10 +168,7 @@ pub fn interactive_mode_loop() -> rustyline::Result<()> {
                 println!("CTRL-D");
                 break;
             }
-            Err(err) => {
-                println!("Error: {:?}", err);
-                break;
-            }
+            Err(err) => return Err(err),
         }
     }
 
@@ -190,19 +199,40 @@ mod tests {
     #[test]
     fn parse_buy() {
         let cmd = parse_command_or_error("buy 10 5").unwrap();
-        assert!(matches!(cmd, Command::Buy { price: 10, qty: 5 }));
+        assert!(matches!(
+            cmd,
+            Command::Submit {
+                side: Side::Bid,
+                price: 10,
+                qty: 5
+            }
+        ));
     }
 
     #[test]
     fn parse_sell() {
         let cmd = parse_command_or_error("sell 99 1").unwrap();
-        assert!(matches!(cmd, Command::Sell { price: 99, qty: 1 }));
+        assert!(matches!(
+            cmd,
+            Command::Submit {
+                side: Side::Ask,
+                price: 99,
+                qty: 1
+            }
+        ));
     }
 
     #[test]
     fn parse_trims_whitespace() {
         let cmd = parse_command_or_error("  buy  7  3  ").unwrap();
-        assert!(matches!(cmd, Command::Buy { price: 7, qty: 3 }));
+        assert!(matches!(
+            cmd,
+            Command::Submit {
+                side: Side::Bid,
+                price: 7,
+                qty: 3
+            }
+        ));
     }
 
     #[test]
@@ -341,6 +371,33 @@ mod tests {
         let level = ob.orders_at(Side::Ask, 50).expect("ask level");
         assert_eq!(level.len(), 1);
         assert_eq!(level[0].quantity, 2);
+    }
+
+    #[test]
+    fn print_shows_full_book_best_price_first_per_side() {
+        let mut ob = empty_orderbook();
+        let _ = interactive_mode(&mut ob, "buy 100 5");
+        let _ = interactive_mode(&mut ob, "buy 100 3");
+        let _ = interactive_mode(&mut ob, "buy 99 1");
+        let _ = interactive_mode(&mut ob, "sell 150 2");
+
+        let output = format_book(&ob);
+
+        // Each order's id, quantity and arrival_seq show up.
+        assert!(output.contains("id=1 qty=5 arrival_seq=0"));
+        assert!(output.contains("id=2 qty=3 arrival_seq=1"));
+        assert!(output.contains("id=3 qty=1 arrival_seq=2"));
+        assert!(output.contains("id=4 qty=2 arrival_seq=3"));
+
+        // Bids are best price (100) first, i.e. before the 99 level.
+        let pos_100 = output.find("  100\n").expect("bid level 100");
+        let pos_99 = output.find("  99\n").expect("bid level 99");
+        assert!(pos_100 < pos_99, "bid levels must be best-price-first");
+
+        // Asks section comes before bids section, per format_book's order.
+        let pos_asks = output.find("Asks").expect("asks header");
+        let pos_bids = output.find("Bids").expect("bids header");
+        assert!(pos_asks < pos_bids);
     }
 
     #[test]
