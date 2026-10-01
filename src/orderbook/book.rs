@@ -47,6 +47,13 @@ impl OrderBook {
         self.order_index.len()
     }
 
+    /// Ids the index currently tracks as resting. Lets tests cross-check the
+    /// index against the book's actual contents (bids/asks are private);
+    /// production code has no use for the raw id set.
+    pub fn indexed_order_ids(&self) -> std::collections::HashSet<OrderId> {
+        self.order_index.keys().copied().collect()
+    }
+
     /// Sum of resting quantity across all price levels on `side`.
     pub fn total_quantity(&self, side: Side) -> Quantity {
         self.side_map(side)
