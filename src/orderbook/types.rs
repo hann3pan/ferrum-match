@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::time::SystemTime;
 
 pub type Price = u64;
@@ -8,13 +8,21 @@ pub type ArrivalSeq = u64;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct OrderId(pub u64);
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Side {
     Bid,
     Ask,
 }
 
-#[allow(dead_code)]
+impl Side {
+    pub fn opposite(self) -> Side {
+        match self {
+            Side::Bid => Side::Ask,
+            Side::Ask => Side::Bid,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Order {
     pub id: OrderId,
@@ -30,7 +38,6 @@ pub struct OrderRequest {
     pub quantity: Quantity,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct Trade {
     pub taker_order_id: OrderId,
@@ -41,12 +48,20 @@ pub struct Trade {
     pub timestamp: SystemTime,
 }
 
-pub struct OrderBook {
-    pub next_seq: u64,
-    pub order_id_counter: u64,
-    pub bids: BTreeMap<Price, Vec<Order>>,
-    pub asks: BTreeMap<Price, Vec<Order>>,
-    pub order_index: HashMap<OrderId, Price>,
+pub type Trades = Vec<Trade>;
+
+/// Rejection reasons for order submission. Validated before an order id or
+/// arrival sequence number is consumed, so a rejected order never burns either.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrderError {
+    ZeroPrice,
+    ZeroQuantity,
 }
 
-pub type Trades = Vec<Trade>;
+pub struct OrderBook {
+    pub(super) next_seq: u64,
+    pub(super) order_id_counter: u64,
+    pub(super) bids: BTreeMap<Price, VecDeque<Order>>,
+    pub(super) asks: BTreeMap<Price, VecDeque<Order>>,
+    pub(super) order_index: HashMap<OrderId, (Side, Price)>,
+}

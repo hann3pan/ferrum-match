@@ -1,15 +1,13 @@
 mod modes;
-mod orderbook;
 
 use rustyline::error::ReadlineError;
 use rustyline::{DefaultEditor, Result};
-use std::collections::{BTreeMap, HashMap};
 use std::ops::ControlFlow;
 use tracing::info;
 
 use crate::modes::interactive::{interactive_mode, parse_price, parse_quantity};
-use crate::orderbook::types::{OrderBook, OrderId, Side};
 use clap::{Parser, Subcommand};
+use ferrum_match::orderbook::types::{OrderBook, OrderId, Side};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -76,25 +74,14 @@ fn main() -> Result<()> {
 }
 
 fn print_book() {
-    let orderbook = OrderBook {
-        next_seq: 0,
-        order_id_counter: 1,
-        bids: BTreeMap::new(),
-        asks: BTreeMap::new(),
-        order_index: HashMap::new(),
-    };
+    let orderbook = OrderBook::new();
 
-    orderbook.print();
+    println!("best bid: {:?}", orderbook.best_bid());
+    println!("best ask: {:?}", orderbook.best_ask());
 }
 
 fn cancel(id: u64) {
-    let mut orderbook = OrderBook {
-        next_seq: 0,
-        order_id_counter: 1,
-        bids: BTreeMap::new(),
-        asks: BTreeMap::new(),
-        order_index: HashMap::new(),
-    };
+    let mut orderbook = OrderBook::new();
 
     orderbook.cancel_order(OrderId(id));
 }
@@ -106,13 +93,7 @@ fn add(side: String, price: String, quantity: String) -> Result<()> {
         side, price, quantity
     );
 
-    let mut orderbook = OrderBook {
-        next_seq: 0,
-        order_id_counter: 1,
-        bids: BTreeMap::new(),
-        asks: BTreeMap::new(),
-        order_index: HashMap::new(),
-    };
+    let mut orderbook = OrderBook::new();
 
     let p = parse_price(&price.as_str()).unwrap_or(0);
     let q = parse_quantity(&quantity.as_str()).unwrap_or(0);
@@ -122,7 +103,10 @@ fn add(side: String, price: String, quantity: String) -> Result<()> {
 
     info!("COMMAND MODE: Created empty orderbook");
 
-    orderbook.matching_order(OrderBook::make_order_request(p, q, s));
+    match orderbook.matching_order(OrderBook::make_order_request(p, q, s)) {
+        Ok(trades) => println!("Matched {} trades", trades.len()),
+        Err(e) => println!("Order rejected: {:?}", e),
+    }
     Ok(())
 }
 
@@ -136,13 +120,7 @@ fn parse_side(side: String) -> std::result::Result<Side, String> {
 }
 
 fn interactive_mode_loop() -> Result<()> {
-    let mut orderbook = OrderBook {
-        next_seq: 0,
-        order_id_counter: 1,
-        bids: BTreeMap::new(),
-        asks: BTreeMap::new(),
-        order_index: HashMap::new(),
-    };
+    let mut orderbook = OrderBook::new();
 
     let mut rl = DefaultEditor::new()?;
 
