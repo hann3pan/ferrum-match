@@ -168,10 +168,7 @@ pub fn interactive_mode_loop() -> rustyline::Result<()> {
                 println!("CTRL-D");
                 break;
             }
-            Err(err) => {
-                println!("Error: {:?}", err);
-                break;
-            }
+            Err(err) => return Err(err),
         }
     }
 
