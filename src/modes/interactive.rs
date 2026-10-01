@@ -1,6 +1,6 @@
 use std::ops::ControlFlow;
 
-use crate::orderbook::types::{OrderBook, OrderId, Side};
+use ferrum_match::orderbook::types::{OrderBook, OrderId, Side};
 
 #[derive(Debug, PartialEq)]
 enum Command {
@@ -60,24 +60,31 @@ pub fn parse_id(id: &&str) -> Result<u64, String> {
 pub fn interactive_mode(orderbook: &mut OrderBook, line: &str) -> ControlFlow<()> {
     match parse_command_or_error(line.to_lowercase()) {
         Ok(cmd) => match cmd {
-            Command::Print => orderbook.print(),
+            Command::Print => {
+                println!("best bid: {:?}", orderbook.best_bid());
+                println!("best ask: {:?}", orderbook.best_ask());
+            }
             Command::Buy { price, qty } => {
-                let trades =
-                    orderbook.matching_order(OrderBook::make_order_request(price, qty, Side::Bid));
-                println!(
-                    "Successfully made {} trades, trade information:\n{:?}",
-                    trades.len(),
-                    trades
-                );
+                match orderbook.matching_order(OrderBook::make_order_request(price, qty, Side::Bid))
+                {
+                    Ok(trades) => println!(
+                        "Successfully made {} trades, trade information:\n{:?}",
+                        trades.len(),
+                        trades
+                    ),
+                    Err(e) => println!("Order rejected: {:?}", e),
+                }
             }
             Command::Sell { price, qty } => {
-                let trades =
-                    orderbook.matching_order(OrderBook::make_order_request(price, qty, Side::Ask));
-                println!(
-                    "Successfully made {} trades, trade information:\n{:?}",
-                    trades.len(),
-                    trades
-                );
+                match orderbook.matching_order(OrderBook::make_order_request(price, qty, Side::Ask))
+                {
+                    Ok(trades) => println!(
+                        "Successfully made {} trades, trade information:\n{:?}",
+                        trades.len(),
+                        trades
+                    ),
+                    Err(e) => println!("Order rejected: {:?}", e),
+                }
             }
             Command::Cancel { id } => match orderbook.cancel_order(OrderId(id)) {
                 Some(_) => println!("Successfully cancelled order with id: {}", id),
@@ -99,16 +106,9 @@ pub fn interactive_mode(orderbook: &mut OrderBook, line: &str) -> ControlFlow<()
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::{BTreeMap, HashMap};
 
     fn empty_orderbook() -> OrderBook {
-        OrderBook {
-            next_seq: 0,
-            order_id_counter: 1,
-            bids: BTreeMap::new(),
-            asks: BTreeMap::new(),
-            order_index: HashMap::new(),
-        }
+        OrderBook::new()
     }
 
     #[test]
@@ -228,7 +228,7 @@ mod tests {
         let mut ob = empty_orderbook();
         let flow = interactive_mode(&mut ob, "buy 100 3");
         assert!(flow.is_continue());
-        let level = ob.bids.get(&100).expect("bid level");
+        let level = ob.orders_at(Side::Bid, 100).expect("bid level");
         assert_eq!(level.len(), 1);
         assert_eq!(level[0].quantity, 3);
     }
@@ -238,7 +238,7 @@ mod tests {
         let mut ob = empty_orderbook();
         let flow = interactive_mode(&mut ob, "sell 50 2");
         assert!(flow.is_continue());
-        let level = ob.asks.get(&50).expect("ask level");
+        let level = ob.orders_at(Side::Ask, 50).expect("ask level");
         assert_eq!(level.len(), 1);
         assert_eq!(level[0].quantity, 2);
     }
@@ -247,6 +247,6 @@ mod tests {
     fn interactive_case_insensitive_side() {
         let mut ob = empty_orderbook();
         assert!(interactive_mode(&mut ob, "BUY 10 1").is_continue());
-        assert!(ob.bids.contains_key(&10));
+        assert!(ob.orders_at(Side::Bid, 10).is_some());
     }
 }
