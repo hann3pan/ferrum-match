@@ -37,6 +37,25 @@ impl OrderBook {
         self.side_map(side).get(&price)
     }
 
+    /// Resting price levels on `side`, best price first: bids descending
+    /// from the highest price, asks ascending from the lowest. Each level
+    /// is `(price, orders)` with `orders` in FIFO arrival order, exactly as
+    /// stored — the returned iterator borrows from `self` and cannot outlive
+    /// it.
+    pub fn levels(&self, side: Side) -> impl Iterator<Item = (Price, &VecDeque<Order>)> {
+        let ascending = self
+            .side_map(side)
+            .iter()
+            .map(|(&price, orders)| (price, orders));
+
+        match side {
+            Side::Bid => {
+                Box::new(ascending.rev()) as Box<dyn Iterator<Item = (Price, &VecDeque<Order>)>>
+            }
+            Side::Ask => Box::new(ascending),
+        }
+    }
+
     /// Number of distinct price levels currently resting on `side`.
     pub fn price_level_count(&self, side: Side) -> usize {
         self.side_map(side).len()
