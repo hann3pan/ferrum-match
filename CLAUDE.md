@@ -4,6 +4,18 @@ Matching engine for a crypto exchange, in Rust.
 
 Stack, lokale dev setup en featurelijst: zie README.md.
 
+Leerproject: de owner leert Rust, komt van een C/C++- en TypeScript-achtergrond, en wil elke
+wijziging kunnen volgen — niet alleen het resultaat.
+
+## Workflow
+
+- Create a GitHub issue for the task, work on a branch named `<issue-nr>-<short-name>`, and open
+  a PR to main that references the issue.
+- Conventional commits: `feat` / `fix` / `refactor` / `test` / `ci` / `docs`. Keep commits small
+  and logical.
+- Before finishing: `cargo fmt`, `cargo clippy --all-targets -- -D warnings` (fix warnings in
+  files within the task's scope), and `cargo test` — all green.
+
 ## Commands
 
 | | ferrum_match |
@@ -68,6 +80,18 @@ Benchmarks en fuzz targets bestaan nog niet in deze repo.
   as a string or float from an external feed, convert and validate explicitly at the edge, don't
   let it flow into the book un-normalized.
 
+## Code standards
+
+- Idiomatic, readable Rust over clever Rust — if a generic or trait trick saves 10 lines but is
+  harder to read, don't use it.
+- No `unwrap()` / `expect()` outside of tests — stricter than the live-order-flow rule under
+  **Never** above (which explains why it matters most on the matching path); this rule applies
+  to the rest of the codebase too.
+- Domain code in `src/orderbook` does no I/O (see **Always** above): no `println!` — use
+  `tracing` for anything that needs to be observed.
+- Price-time priority behaviour must never change unless the task explicitly says so (see
+  **Ask first** above).
+
 ## Implementation standards
 
 Applies to every feature or fix, not just the items above. Full rationale:
@@ -97,6 +121,17 @@ Applies to every feature or fix, not just the items above. Full rationale:
   network concerns, split along that seam.
 - **No speculative abstraction.** Don't add a generic parameter, trait, or config flag for a
   matching rule or order type that doesn't exist yet.
+
+## Explaining (required)
+
+Every PR description has a **"Rust notes"** section explaining ownership, borrowing and
+lifetime decisions, any borrow-checker errors hit and how they were resolved, and tradeoffs
+considered. Write it for a capable engineer who is new to Rust.
+
+## Scope
+
+Stay within the task. Anything else noticed goes under **"Follow-ups"** in the PR description,
+not into the code.
 
 ## Working style
 
