@@ -36,17 +36,12 @@ cargo run -- interactive
 
 Price and quantity are whole numbers. If a buy and a sell overlap, they match. Leftover size stays on the book.
 
-### One-shot commands
+Bad input (an invalid id, a non-numeric price, a price/quantity of zero, ...) prints an error and
+keeps the prompt running instead of crashing.
 
-Each of these starts with an empty book:
+### Headless mode
 
-```bash
-cargo run -- add --side buy --price 100 --quantity 5
-cargo run -- view-book
-cargo run -- cancel --id 1
-```
-
-`run` (headless server) is not implemented yet.
+`cargo run -- run` is not implemented yet; it prints a message and exits with a non-zero status.
 
 ### Tests
 
