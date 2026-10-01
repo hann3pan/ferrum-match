@@ -49,7 +49,9 @@ impl OrderBook {
 
     /// Ids the index currently tracks as resting. Lets tests cross-check the
     /// index against the book's actual contents (bids/asks are private);
-    /// production code has no use for the raw id set.
+    /// production code has no use for the raw id set, so this only exists
+    /// under the `test-utils` feature.
+    #[cfg(feature = "test-utils")]
     pub fn indexed_order_ids(&self) -> std::collections::HashSet<OrderId> {
         self.order_index.keys().copied().collect()
     }

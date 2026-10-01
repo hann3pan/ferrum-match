@@ -12,3 +12,16 @@ clap = { version = "4.6.1", features = ["derive"] }
 
 [dev-dependencies]
 proptest = "1.4.0"
+# Self dev-dependency so `cargo test` enables `test-utils` for the whole
+# build graph (lib + integration tests in tests/) via Cargo's feature
+# unification, without needing `--features test-utils` on the command
+# line or a separate CI-only step. See Cargo.toml's [features] and the
+# PR's "Rust notes" for why this is safe (dev-dependencies don't
+# introduce a real build cycle).
+ferrum_match = { path = ".", features = ["test-utils"] }
+
+[features]
+# Exposes test-only accessors (e.g. `OrderBook::indexed_order_ids`) that
+# production code has no use for. Off by default so the public API seen
+# by a normal `cargo build`/library consumer stays minimal.
+test-utils = []
